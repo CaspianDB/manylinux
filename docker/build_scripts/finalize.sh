@@ -11,6 +11,12 @@ source $MY_DIR/build_utils.sh
 
 mkdir /opt/python
 for PREFIX in $(find /opt/_internal/ -mindepth 1 -maxdepth 1 \( -name 'cpython*' -o -name 'pypy*' \)); do
+  if [[ "${PREFIX}" =~ -shared$ ]]; then
+		SUFFIX=-shared
+	else
+		SUFFIX=
+	fi
+
 	# Some python's install as bin/python3. Make them available as
 	# bin/python.
 	if [ -e ${PREFIX}/bin/python3 ] && [ ! -e ${PREFIX}/bin/python ]; then
@@ -26,12 +32,12 @@ for PREFIX in $(find /opt/_internal/ -mindepth 1 -maxdepth 1 \( -name 'cpython*'
 	${PREFIX}/bin/pip install -U --require-hashes -r ${MY_DIR}/requirements${PY_VER}.txt
 	# Create a symlink to PREFIX using the ABI_TAG in /opt/python/
 	ABI_TAG=$(${PREFIX}/bin/python ${MY_DIR}/python-tag-abi-tag.py)
-	ln -s ${PREFIX} /opt/python/${ABI_TAG}
+	ln -s ${PREFIX} /opt/python/${ABI_TAG}${SUFFIX}
 	# Make versioned python commands available directly in environment.
 	if [[ "${PREFIX}" == *"/pypy"* ]]; then
-		ln -s ${PREFIX}/bin/python /usr/local/bin/pypy${PY_VER}
+		ln -s ${PREFIX}/bin/python /usr/local/bin/pypy${PY_VER}${SUFFIX}
 	else
-		ln -s ${PREFIX}/bin/python /usr/local/bin/python${PY_VER}
+		ln -s ${PREFIX}/bin/python /usr/local/bin/python${PY_VER}${SUFFIX}
 	fi
 done
 

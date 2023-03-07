@@ -29,33 +29,54 @@ fetch_source Python-${CPYTHON_VERSION}.tgz.asc ${CPYTHON_DOWNLOAD_URL}/${CPYTHON
 gpg --import ${MY_DIR}/cpython-pubkeys.txt
 gpg --verify Python-${CPYTHON_VERSION}.tgz.asc
 tar -xzf Python-${CPYTHON_VERSION}.tgz
-pushd Python-${CPYTHON_VERSION}
-PREFIX="/opt/_internal/cpython-${CPYTHON_VERSION}"
-mkdir -p ${PREFIX}/lib
-CFLAGS_EXTRA=""
-if [ "${CPYTHON_VERSION}" == "3.6.15" ]; then
-	# https://github.com/python/cpython/issues/89863
-	# gcc-12+ uses these 2 flags in -O2 but they were only enabled in -O3 with gcc-11
-	CFLAGS_EXTRA="${CFLAGS_EXTRA} -fno-tree-loop-vectorize -fno-tree-slp-vectorize"
-fi
-if [ "${AUDITWHEEL_POLICY}" == "manylinux2014" ] ; then
-    # Python 3.11+
-	export TCLTK_LIBS="-ltk8.6 -ltcl8.6"
+
+function build {
+  IS_SHARED=$1
+  pushd Python-${CPYTHON_VERSION}
+  PREFIX="/opt/_internal/cpython-${CPYTHON_VERSION}"
+  if [ ${IS_SHARED} -eq 1 ]; then
+		PREFIX="${PREFIX}-shared"
+	fi
+  mkdir -p ${PREFIX}/lib
+  CFLAGS_EXTRA=""
+  if [ "${CPYTHON_VERSION}" == "3.6.15" ]; then
+    # https://github.com/python/cpython/issues/89863
+    # gcc-12+ uses these 2 flags in -O2 but they were only enabled in -O3 with gcc-11
+    CFLAGS_EXTRA="${CFLAGS_EXTRA} -fno-tree-loop-vectorize -fno-tree-slp-vectorize"
+  fi
+  if [ "${AUDITWHEEL_POLICY}" == "manylinux2014" ] ; then
+      # Python 3.11+
+    export TCLTK_LIBS="-ltk8.6 -ltcl8.6"
+  fi
+
+  if [ ${IS_SHARED} -eq 1 ]; then
+		FLAVOR="--enable-shared"
+		FLAVOR_LDFLAGS="-Wl,-rpath=${PREFIX}/lib"
+	else
+		FLAVOR="--disable-shared"
+		FLAVOR_LDFLAGS=
+	fi
+
+  # configure with hardening options only for the interpreter & stdlib C extensions
+  # do not change the default for user built extension (yet?)
+  ./configure \
+    CFLAGS_NODIST="${MANYLINUX_CFLAGS} ${MANYLINUX_CPPFLAGS} ${CFLAGS_EXTRA}" \
+    LDFLAGS_NODIST="${MANYLINUX_LDFLAGS} ${FLAVOR_LDFLAGS}" \
+    --prefix=${PREFIX} "${FLAVOR}" --with-ensurepip=no > /dev/null
+  make > /dev/null
+  make install > /dev/null
+  popd
+
+  # We do not need precompiled .pyc and .pyo files.
+  clean_pyc ${PREFIX}
+
+  # Strip ELF files found in ${PREFIX}
+  strip_ ${PREFIX}
+}
+
+build 0
+if [ ${PY_SHARED-0} -eq 1 ]; then
+	build 1
 fi
 
-# configure with hardening options only for the interpreter & stdlib C extensions
-# do not change the default for user built extension (yet?)
-./configure \
-	CFLAGS_NODIST="${MANYLINUX_CFLAGS} ${MANYLINUX_CPPFLAGS} ${CFLAGS_EXTRA}" \
-	LDFLAGS_NODIST="${MANYLINUX_LDFLAGS}" \
-	--prefix=${PREFIX} --disable-shared --with-ensurepip=no > /dev/null
-make > /dev/null
-make install > /dev/null
-popd
 rm -rf Python-${CPYTHON_VERSION} Python-${CPYTHON_VERSION}.tgz Python-${CPYTHON_VERSION}.tgz.asc
-
-# We do not need precompiled .pyc and .pyo files.
-clean_pyc ${PREFIX}
-
-# Strip ELF files found in ${PREFIX}
-strip_ ${PREFIX}
